@@ -1,6 +1,6 @@
 # Internacionalização com gettext
 
-Este documento descreve o padrão de i18n do projeto RER-DPG usando **GNU gettext** (arquivos PO/POT), preparado para manutenção futura via **Weblate**.
+Este documento descreve o padrão de i18n do projeto RER-DPG usando **GNU gettext** (arquivos PO/POT), com manutenção das traduções no **Hosted Weblate** (plano Libre).
 
 ## Convenções
 
@@ -61,7 +61,7 @@ Lookups dinâmicos (chaves legadas): [`frontend/src/i18n/dynamicTranslations.ts`
 
 ## Weblate
 
-Guia de implantação (servidor dedicado, PR para `develop`): [weblate-setup.md](./weblate-setup.md).
+Guia de implantação (Hosted Weblate, plano Libre, PR para `develop`): [weblate-setup.md](./weblate-setup.md).
 
 Resumo do projeto no Weblate: **RER-DPG**, dois componentes:
 
@@ -72,7 +72,7 @@ Resumo do projeto no Weblate: **RER-DPG**, dois componentes:
 
 Formato: **GNU gettext PO (monolingual)**. Idioma base: `en-us`.
 
-Workflow: tradutor edita no Weblate → PR/commit → desenvolvedor valida localmente (`gettext:extract`, `gettext:compile`, testes).
+Workflow: tradutor edita no Weblate → Pull Request para `develop` → desenvolvedor valida localmente (`gettext:compile` e, se o PO de relatório mudou, `node scripts/i18n/compile-backend-reports.mjs`).
 
 ## CI / pipelines
 

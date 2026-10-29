@@ -1,78 +1,75 @@
-# Implantação do Weblate — RER-DPG
+# Weblate no Hosted Weblate — RER-DPG
 
-Este documento descreve como implantar o **Weblate** em **servidor dedicado** da organização, conectado ao repositório [Rural-Environmental-Registry/core](https://github.com/Rural-Environmental-Registry/core), com envio de traduções via **Pull Request** para a branch **`develop`**.
+Este documento descreve como usar o [Hosted Weblate](https://hosted.weblate.org/) (plano **Libre**, grátis) no repositório [Rural-Environmental-Registry/core](https://github.com/Rural-Environmental-Registry/core), com envio de traduções via **Pull Request** para a branch **`develop`**.
 
 Para convenções de gettext, estrutura de `locale/` e papéis de desenvolvedor/tradutor, consulte [i18n-gettext.md](./i18n-gettext.md).
 
+O Weblate **não entra** no Docker da aplicação e **não altera** `gettext:extract` nem `gettext:compile`. A integração é conta, GitHub App e dois componentes.
+
 ## Visão geral
 
-O Weblate **não faz parte** do deploy da aplicação RER (Docker Compose, frontend, backend). É um serviço à parte que:
+1. O desenvolvedor escreve inglês no código, roda `gettext:extract` e faz merge em `develop`.
+2. O Hosted Weblate **lê** `locale/**/*.po` e `*.pot` nessa branch.
+3. O tradutor edita só `msgstr` de `pt-br` e `es-es`.
+4. O Weblate grava no branch `weblate-translations` e **abre um Pull Request** para `develop`. Ninguém faz push direto em `develop`.
+5. Depois do merge, o build local ou o CI compila os `.po`.
 
-1. **Lê** do GitHub os arquivos `locale/**/*.po` e `*.pot` na branch `develop`.
-2. Permite que tradutores editem apenas `msgstr` pela interface web.
-3. **Abre Pull Requests** no GitHub quando há alterações prontas para integrar.
+Arquivos **gerados** (`locale/frontend/translations.json`, `frontend/src/i18n/translations.json`, `backend/src/main/resources/reports/i18n/**/report_params.json`) ficam fora da máscara de arquivos. São produzidos no build, depois do merge.
 
-Arquivos **gerados** (`locale/frontend/translations.json`, `frontend/src/i18n/translations.json`, `reports/i18n/**/report_params.json`) **não** são editados no Weblate — são produzidos no build após o merge do PR.
+```mermaid
+flowchart LR
+  dev[Dev em develop] --> pot[locale po e pot]
+  pot --> hosted[Hosted Weblate]
+  hosted --> branch[branch weblate-translations]
+  branch --> pr[Pull Request]
+  pr --> develop[develop]
+  develop --> compile[gettext compile no build]
+```
 
-![Fluxo Weblate](infra-weblate-flux.png)
+## Plano Libre
+
+O repositório é público e está sob GPL-3. O plano escolhido é o **Libre** do Hosted Weblate.
+
+| Item | Valor |
+|------|--------|
+| Plano | Libre (grátis), só para projeto público, com aprovação do Weblate |
+| Strings hospedadas | até 160 mil (cada string-fonte conta de novo em cada idioma) |
+| Projetos | 1 |
+| Componentes e idiomas | ilimitados |
+| Serviço | [hosted.weblate.org](https://hosted.weblate.org/) |
+
+Condições do plano, conforme o [site do Weblate](https://weblate.org/en/hosting/):
+
+- Código-fonte público, com licença livre, e traduções no mesmo repositório.
+- Há um período de teste; para continuar grátis é preciso pedir a aprovação do Weblate.
+- O README do repositório deve citar que as traduções usam o Weblate.
+- O plano comum **não** oferece domínio próprio nem SSO. Isso fica na instância dedicada, que não é este guia.
+
+Os textos de interface e de recibo ficam também nos servidores do Weblate (nuvem na UE). O conteúdo dos `.po` já é público no GitHub. Se o repositório deixar de ser público, o Libre deixa de servir.
 
 ## Pré-requisitos
-
-### Repositório GitHub
 
 | Item | Valor |
 |------|--------|
 | Organização / repo | `Rural-Environmental-Registry/core` |
 | URL | `https://github.com/Rural-Environmental-Registry/core` |
 | Branch de leitura | `develop` |
+| Branch de push | `weblate-translations` |
 | Branch alvo do PR | `develop` |
 | Pasta de traduções | `locale/` na raiz do monorepo |
 
-### Conta de integração GitHub
+Não versionar token, senha ou URL com credencial. O app do GitHub autentica clone, push, abertura de PR e aviso de push. Não é preciso webhook separado nem token no repositório.
 
-Criar **uma** das opções (preferência: GitHub App):
+## Conta e GitHub App
 
-1. **GitHub App** instalada no repositório `core`, com permissões de leitura/escrita em conteúdo e pull requests; ou
-2. **Fine-grained personal access token** (conta de serviço/bot) com escopo apenas em `Rural-Environmental-Registry/core`.
+1. Criar conta em [hosted.weblate.org](https://hosted.weblate.org/) e escolher o plano Libre.
+2. No workspace do Weblate, usar **Connect GitHub account**.
+3. Instalar o app [Hosted Weblate](https://github.com/apps/hosted-weblate) **somente** no repositório `core` da organização `Rural-Environmental-Registry`.
+4. Importar os componentes pelo fluxo do app. O controle de versão fica **GitHub (via Weblate GitHub app)**, não Git puro. A URL do repositório fica somente leitura, para o app não ser redirecionado a outro remoto.
 
-Permissões necessárias:
+Sem **Push branch**, o Weblate abre um fork. Com `weblate-translations`, o commit vai para esse branch no repositório de origem e o PR aponta para `develop`.
 
-- Leitura do repositório (clone/pull).
-- Escrita em branches e abertura de Pull Requests.
-- **Não** é necessário merge automático — revisão humana no GitHub.
-
-Registrar credenciais apenas no servidor Weblate (variáveis de ambiente ou cofre da organização). Nunca commitar tokens no repositório.
-
-## Instalação no servidor dedicado (Docker)
-
-A instalação oficial recomendada é via [Docker Compose do Weblate](https://docs.weblate.org/en/latest/admin/install/docker.html). Exemplo de estrutura (adaptar paths e domínio):
-
-```bash
-# No servidor dedicado (exemplo)
-sudo mkdir -p /opt/weblate
-cd /opt/weblate
-curl -LO https://raw.githubusercontent.com/WeblateOrg/docker-compose/master/docker-compose.yml
-curl -LO https://raw.githubusercontent.com/WeblateOrg/docker-compose/master/environment
-```
-
-Editar `environment` (valores ilustrativos):
-
-```bash
-WEBLATE_SITE_DOMAIN=weblate.exemplo.gov.br
-WEBLATE_ADMIN_PASSWORD=<senha-inicial-forte>
-WEBLATE_SERVER_EMAIL=noreply@exemplo.gov.br
-# PostgreSQL e Redis: usar defaults do compose ou externos gerenciados
-```
-
-Subir o stack:
-
-```bash
-docker compose up -d
-```
-
-Após o primeiro acesso (`https://weblate.exemplo.gov.br`), alterar a senha do usuário `admin`, configurar SMTP (notificações) e backup do volume PostgreSQL conforme política da organização.
-
-## Configuração do projeto no Weblate
+## Configuração do projeto
 
 ### 1. Criar o projeto
 
@@ -81,52 +78,36 @@ Após o primeiro acesso (`https://weblate.exemplo.gov.br`), alterar a senha do u
 | Nome | `RER-DPG` |
 | Slug | `rer-dpg` |
 | Site web do projeto | `https://github.com/Rural-Environmental-Registry/core` |
+| Language aliases | `en-us:en,pt-br:pt_BR,es-es:es` |
 
-### 2. Conectar o repositório Git
+Os aliases são sensíveis a maiúsculas e devem repetir o código que aparece no nome do arquivo (hífen), mapeado para o código de idioma do Weblate.
 
-Em **Gerenciar → Repositório** (ou na criação do componente):
+### 2. Componentes
+
+Criar **dois** componentes, ambos lendo `develop` e gravando em `weblate-translations`.
+
+Campos comuns:
 
 | Campo | Valor |
 |-------|--------|
-| Controle de versão | Git |
-| URL do repositório | `https://github.com/Rural-Environmental-Registry/core.git` |
-| Ramo | `develop` |
-| Push branch | `weblate-translations` (ramo intermediário; ver seção PR abaixo) |
-| Credencial | GitHub App ou token da conta de serviço |
+| Version control system | GitHub (via Weblate GitHub app) |
+| Repository branch | `develop` |
+| Push branch | `weblate-translations` |
+| Formato de arquivo | GNU gettext PO (monolingual) |
+| Edit base file | desligado |
+| Manage strings | desligado |
 
-**Importante:** o Weblate deve fazer push em um **branch dedicado** e abrir PR para `develop`, não fazer push direto em `develop`.
+**Edit base file** e **Manage strings** ficam desligados para o tradutor não alterar `en-us.po`, `msgid` nem `msgctxt`.
 
-### 3. Habilitar Pull Requests no GitHub
-
-Em **Gerenciar → Repositório → Configuração avançada** (ou addon **GitHub**):
-
-- Ativar **Pull request** como método de envio.
-- **Branch alvo do PR:** `develop`.
-- **Título sugerido do PR:** `i18n: atualização de traduções via Weblate`.
-- Atribuir revisores padrão (equipe de desenvolvimento), se a org usar code owners.
-
-Fluxo resultante:
-
-```
-Weblate commit → branch weblate-translations → abre PR → develop
-```
-
-Alternativa sem branch permanente: usar o addon que cria um branch temporário por lote de traduções; o essencial é **sempre integrar via PR**, nunca push direto em `develop`.
-
-### 4. Componentes de tradução
-
-Criar **dois componentes** no projeto `RER-DPG`, ambos apontando para o mesmo repositório e branch `develop`:
+Título sugerido do PR: `i18n: atualização de traduções via Weblate`.
 
 #### Componente `frontend-ui`
 
 | Campo | Valor |
 |-------|--------|
 | Nome | `frontend-ui` |
-| Formato de arquivo | GNU gettext PO (monolingual) |
 | Máscara de arquivos | `locale/frontend/*.po` |
-| Arquivo de modelo | `locale/frontend/messages.pot` |
-| Idioma base | `en` (código Weblate; corresponde a `en-us` no projeto) |
-| Idiomas | `pt_BR`, `es` (mapear para `pt-br`, `es-es` nos nomes de arquivo) |
+| Monolingual base language file | `locale/frontend/messages.pot` |
 
 Arquivos versionados:
 
@@ -140,11 +121,8 @@ Arquivos versionados:
 | Campo | Valor |
 |-------|--------|
 | Nome | `backend-reports` |
-| Formato de arquivo | GNU gettext PO (monolingual) |
 | Máscara de arquivos | `locale/backend/*.po` |
-| Arquivo de modelo | `locale/backend/reports.pot` |
-| Idioma base | `en` |
-| Idiomas | `pt_BR`, `es` |
+| Monolingual base language file | `locale/backend/reports.pot` |
 
 Arquivos versionados:
 
@@ -152,9 +130,9 @@ Arquivos versionados:
 - `locale/backend/pt-br.po`
 - `locale/backend/es-es.po`
 
-Para relatórios Jasper, tradutores editam `msgstr`; o `msgctxt` (ex.: `header.title_text`) **não deve ser alterado** — identifica a chave na estrutura JSON.
+Para relatórios Jasper, tradutores editam `msgstr`. O `msgctxt` (ex.: `header.title_text`) identifica a chave na estrutura JSON e não deve ser alterado.
 
-### 5. Sincronização com `locale/LINGUAS`
+### 3. Sincronização com `locale/LINGUAS`
 
 O arquivo [`locale/LINGUAS`](../../locale/LINGUAS) define os idiomas suportados:
 
@@ -166,13 +144,14 @@ es-es
 
 Manter os códigos de arquivo `.po` alinhados a essa lista. Ao adicionar idioma novo:
 
-1. Atualizar `locale/LINGUAS` e código (ver [i18n-gettext.md](./i18n-gettext.md)).
-2. Adicionar o idioma nos dois componentes Weblate.
-3. Copiar do `.pot` correspondente o novo `{locale}.po`.
+1. Atualizar `locale/LINGUAS` e o código (ver [i18n-gettext.md](./i18n-gettext.md)).
+2. Incluir o alias `codigo-do-arquivo:codigo_Weblate` no projeto.
+3. Adicionar o idioma nos dois componentes.
+4. Copiar do `.pot` correspondente o novo `{locale}.po`.
 
-### 6. Arquivos que o Weblate não deve editar
+### 4. Arquivos que o Weblate não deve editar
 
-Configurar **ignored** ou não incluir na máscara:
+Não incluir na máscara:
 
 | Caminho | Motivo |
 |---------|--------|
@@ -189,22 +168,23 @@ Configurar **ignored** ou não incluir na máscara:
 2. Rodar `cd frontend && npm run gettext:extract` após mudanças de UI.
 3. Commitar e fazer merge em `develop`: `.pot`, `.po` (novas entradas com `msgstr` vazio nas traduções).
 4. Revisar e aprovar PRs abertos pelo Weblate.
-5. Após merge do PR de tradução: validar localmente:
+5. Após merge do PR de tradução, validar localmente:
 
 ```bash
 cd frontend && npm run gettext:compile && npm run build
 node scripts/i18n/compile-backend-reports.mjs   # se alterou backend PO
 ```
+
 ### Tradutores (Weblate)
 
-1. Acessar apenas a instância `https://weblate.<org>/projects/rer-dpg/`.
+1. Acessar `https://hosted.weblate.org/projects/rer-dpg/`.
 2. Editar **somente** `msgstr` em `pt-br` e `es-es` (e futuros idiomas).
-3. Marcar tradução como revisada no Weblate, conforme workflow interno.
-4. Deixar o Weblate **enviar** (criar PR); não clonar o repo para editar `.po` manualmente, salvo exceções acordadas.
+3. Marcar a tradução como revisada no Weblate, conforme o fluxo interno.
+4. Deixar o Weblate **enviar** (criar o PR). Não clonar o repositório para editar `.po` à mão, salvo exceção combinada.
 
 ### Revisores de PR (GitHub)
 
-1. Verificar que o PR contém **apenas** alterações em `locale/**/*.po` (e eventualmente `messages.pot` / `reports.pot` se o Weblate sincronizou metadados).
+1. Verificar que o PR contém **apenas** alterações em `locale/**/*.po` (e, se o Weblate sincronizou metadados, `messages.pot` ou `reports.pot`).
 2. Rejeitar PRs que alterem `translations.json` ou código-fonte.
 3. Fazer merge em `develop` quando as traduções estiverem corretas.
 
@@ -212,36 +192,47 @@ node scripts/i18n/compile-backend-reports.mjs   # se alterou backend PO
 
 ### A — Nova string na aplicação (desenvolvedor)
 
-![Fluxo Desenvolvedor](dev-flux.png)
+```mermaid
+flowchart LR
+  codigo[Ingles no codigo] --> extract[gettext extract]
+  extract --> merge[Merge em develop]
+  merge --> aviso[App avisa o Weblate]
+  aviso --> fila[String nova para traduzir]
+```
 
 ### B — Tradução e integração (tradutor → PR)
 
-![Fluxo Weblate](weblate-flux.png)
+```mermaid
+flowchart LR
+  edicao[Editar msgstr] --> branch[weblate-translations]
+  branch --> pr[Pull Request]
+  pr --> revisao[Revisor no GitHub]
+  revisao --> develop[Merge em develop]
+  develop --> compile[gettext compile]
+```
 
 ### C — Conflito entre extract e Weblate
 
+O merge do desenvolvedor em `develop` vem primeiro. O app avisa o Weblate, que puxa de novo e marca entradas `fuzzy`.
+
 | Situação | Ação |
 |----------|------|
-| Dev alterou `.pot` e tradutor o mesmo `.po` | Prioridade: merge do dev em `develop` primeiro; Weblate refaz pull e pede retradução de entradas `fuzzy` |
-| PR do Weblate com conflito em `.po` | Resolver no GitHub ou no Weblate (ferramenta de merge de traduções); não apagar `msgid` |
-| String removida do código | `gettext:extract` marca obsoleta no `.po`; Weblate limpa na próxima sincronização |
+| Dev alterou `.pot` e tradutor o mesmo `.po` | Merge do dev em `develop` primeiro; Weblate refaz o pull e pede retradução das entradas `fuzzy` |
+| PR do Weblate com conflito em `.po` | Resolver no GitHub ou no Weblate; não apagar `msgid` |
+| String removida do código | `gettext:extract` marca a entrada obsoleta no `.po`; o Weblate limpa na próxima sincronização |
 
-## Configuração recomendada de PR no GitHub
+## Proteção de `develop` no GitHub
 
-### Branch protection em `develop`
+- Exigir Pull Request antes do merge.
+- Exigir pelo menos um revisor (code owners em `locale/`, se a organização usar).
+- A instalação do app **não** recebe bypass de merge.
 
-- Exigir PR antes do merge.
-- Exigir aprovação de pelo menos um revisor (code owners em `locale/` se aplicável).
-- Permitir merge do bot/conta Weblate apenas via PR (sem bypass).
-
-### Modelo de descrição do PR (Weblate)
-
-Sugerir no addon ou instrução manual:
+### Modelo de descrição do PR
 
 ```markdown
 ## Traduções Weblate
 
-Atualização automática de arquivos PO em `locale/frontend` e/ou `locale/backend`.
+Atualização de arquivos PO em `locale/frontend` e/ou `locale/backend`.
 
 ### Checklist do revisor
 - [ ] Apenas arquivos `.po` (sem JSON gerado)
@@ -249,13 +240,8 @@ Atualização automática de arquivos PO em `locale/frontend` e/ou `locale/backe
 - [ ] Sem alteração de `msgctxt` nos PO de relatório
 - [ ] Após merge: `gettext:compile` no pipeline ou validação local
 ```
-### Webhook (opcional)
-
-Configurar no GitHub **Repository → Webhooks** apontando para o Weblate para pull imediato após merge em `develop`, reduzindo atraso até novas strings aparecerem para tradução.
 
 ## Pós-merge: validação no repositório
-
-Após integrar PR de tradução em `develop`:
 
 ```bash
 git checkout develop && git pull
@@ -271,34 +257,37 @@ cd ..
 node scripts/i18n/compile-backend-reports.mjs
 cd backend && ./gradlew compileJava -x test
 ```
+
 Confirmar na aplicação os idiomas `pt-br` e `es-es` (seletor de idioma / `localStorage` chave `language`).
 
-## Segurança e conformidade
+## O que não fazer
 
-- Weblate em rede controlada; tradutores autenticados com contas individuais (sem usuário compartilhado).
-- Token GitHub de menor privilégio possível, rotacionado periodicamente.
-- Logs de auditoria do Weblate e do GitHub para rastrear quem alterou traduções.
-- Dados nos `.po` são textos de interface e relatórios — classificar conforme política de informação da org; o servidor dedicado deve seguir o mesmo baseline de segurança dos demais serviços internos.
+- Não versionar token, senha ou URL com credencial.
+- Não incluir `translations.json` nem `reports/i18n/**` na máscara.
+- Não apontar o Weblate para outro remoto que não seja `Rural-Environmental-Registry/core`.
+- Não usar Git puro, token pessoal nem o usuário `weblate` de SSH no lugar do app.
+- Não configurar webhook separado: o app já avisa o Weblate a cada push.
+- Não dar à instalação do app permissão de merge sem revisão.
 
 ## Checklist de implantação
 
 | # | Etapa | Responsável |
 |---|--------|-------------|
-| 1 | Provisionar servidor, DNS, TLS | Infra |
-| 2 | Subir Weblate (Docker) + backup PostgreSQL | Infra |
-| 3 | Criar GitHub App / token de serviço | DevOps |
-| 4 | Criar projeto `RER-DPG` e componentes `frontend-ui` / `backend-reports` | i18n / Dev |
-| 5 | Configurar PR para `develop` (sem push direto) | DevOps |
-| 6 | Importar `locale/` a partir de `develop` | Dev |
-| 7 | Cadastrar tradutores e permissões no Weblate | Gestão i18n |
-| 8 | Documentar URL e fluxo para a equipe | Gestão i18n |
-| 9 | Testar ciclo completo: edição → PR → merge → compile | Dev + tradutor |
-| 10 | (Futuro) CI `i18n-compile` / checagem de `.pot` | Dev |
+| 1 | Criar conta no Hosted Weblate e selecionar o plano Libre | Gestão i18n |
+| 2 | Conectar a conta GitHub e instalar o app só no repositório `core` | DevOps |
+| 3 | Criar o projeto `RER-DPG` (`rer-dpg`) e os aliases de idioma | i18n / Dev |
+| 4 | Importar `frontend-ui` e `backend-reports` a partir de `develop`, com push em `weblate-translations` | i18n / Dev |
+| 5 | Proteger `develop`: PR obrigatório, pelo menos um revisor, sem bypass para o app | DevOps |
+| 6 | Citar o Weblate no README e pedir a aprovação do plano Libre | Gestão i18n |
+| 7 | Cadastrar tradutores com contas individuais | Gestão i18n |
+| 8 | Provar o ciclo: traduzir uma string, conferir que o PR só mexe em `locale/**/*.po`, fazer merge e compilar | Dev + tradutor |
 
 ## Referências
 
 - Repositório RER: [github.com/Rural-Environmental-Registry/core](https://github.com/Rural-Environmental-Registry/core)
 - Gettext no projeto: [i18n-gettext.md](./i18n-gettext.md)
-- Documentação Weblate: [docs.weblate.org](https://docs.weblate.org/)
-- Instalação Docker: [Weblate Docker](https://docs.weblate.org/en/latest/admin/install/docker.html)
-- Integração Git / GitHub: [Weblate VCS](https://docs.weblate.org/en/latest/admin/vcs.html)
+- Hosted Weblate: [hosted.weblate.org](https://hosted.weblate.org/)
+- Plano Libre: [weblate.org/en/hosting](https://weblate.org/en/hosting/)
+- App no GitHub: [github.com/apps/hosted-weblate](https://github.com/apps/hosted-weblate)
+- Integração com GitHub: [Code-hosting integrations](https://docs.weblate.org/en/latest/admin/code-hosting.html)
+- Projetos e aliases: [Translation projects](https://docs.weblate.org/en/latest/admin/projects.html)
